@@ -1,0 +1,77 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: auth-service
+  namespace: microservices-demo
+  labels:
+    app: auth-service
+spec:
+  containers:
+    - name: auth-app
+      image: node:18-alpine
+      command: ["/bin/sh", "-c"]
+      args:
+        - |
+          mkdir -p /app
+          cd /app
+          npm init -y > /dev/null 2>&1
+          npm install pg > /dev/null 2>&1
+          cat > app.js << 'APPEOF'
+          const { Client } = require('pg');
+
+          console.log("=".repeat(60));
+          console.log("SERVICIO DE AUTENTICACION - Iniciando...");
+          console.log("=".repeat(60));
+
+          async function testConnection() {
+            for (let attempt = 1; attempt <= 5; attempt++) {
+              try {
+                console.log(`\n[Intento ${attempt}/5] Conectando a postgres-service:5432...`);
+                
+                const client = new Client({
+                  host: 'postgres-service',
+                  port: 5432,
+                  database: 'authdb',
+                  user: 'admin',
+                  password: 'password123',
+                  connectionTimeoutMillis: 5000
+                });
+                
+                await client.connect();
+                console.log('✓ ¡Conexión EXITOSA!');
+                
+                const result = await client.query('SELECT NOW();');
+                console.log(`✓ Query ejecutada: ${result.rows[0].now}`);
+                
+                const versionResult = await client.query('SELECT version();');
+                console.log(`✓ PostgreSQL: ${versionResult.rows[0].version.substring(0, 60)}...`);
+                
+                await client.end();
+                
+                console.log("\n" + "=".repeat(60));
+                console.log("STATUS: OPERATIVO ✓✓✓");
+                console.log("=".repeat(60));
+                
+                // Mantener el contenedor corriendo
+                setInterval(() => {}, 1000);
+                return;
+              } catch (error) {
+                console.log(`✗ Error: ${error.code || error.name}: ${error.message.substring(0, 80)}`);
+                if (attempt < 5) {
+                  console.log("  Reintentando en 3 segundos...");
+                  await new Promise(r => setTimeout(r, 3000));
+                }
+              }
+            }
+            
+            console.log("\n" + "=".repeat(60));
+            console.log("STATUS: FALLO - No se pudo conectar");
+            console.log("=".repeat(60));
+            
+            // Mantener el contenedor corriendo
+            setInterval(() => {}, 1000);
+          }
+
+          testConnection();
+          APPEOF
+          node app.js
